@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="株式の売却価格・株数・取得単価から、SMBC日興証券と三菱UFJモルガン・スタンレー証券の手数料、税金、手残り金額を試算する計算機">
+  <link rel="icon" href="https://avatars.githubusercontent.com/u/238583111?v=4">
   <title>株式手数料計算</title>
   <style>
     :root {
@@ -34,7 +35,9 @@
       line-height: 1.5;
     }
     main { max-width: 980px; margin: 0 auto; padding: 28px 18px 44px; }
-    h1 { margin: 0 0 6px; color: var(--navy); font-size: clamp(1.35rem, 3vw, 1.8rem); }
+    .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+    .brand-logo { width: 42px; height: 42px; border-radius: 50%; object-fit: cover; flex: none; border: 1px solid var(--line); }
+    h1 { margin: 0; color: var(--navy); font-size: clamp(1.35rem, 3vw, 1.8rem); }
     .intro { margin: 0 0 22px; color: var(--muted); }
     .panel {
       background: #fff;
@@ -135,7 +138,10 @@
 </head>
 <body data-broker="nikko">
   <main>
-    <h1>株式手数料計算</h1>
+    <div class="brand">
+      <img class="brand-logo" src="https://avatars.githubusercontent.com/u/238583111?v=4" alt="Bar SPEC ロゴ">
+      <h1>株式手数料計算</h1>
+    </div>
     <p class="intro">約定単価・数量・取得単価を入力し、タブで証券会社を切り替えると、手数料・税金・手残り金額を比較できます。</p>
 
     <section class="panel" aria-labelledby="input-title">

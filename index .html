@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="株式の売却価格、株数、取得単価から、SMBC日興証券と三菱UFJモルガン・スタンレー証券の手数料と手取り利益を試算する計算機">
+  <title>株式手数料計算</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --navy: #183b5b;
+      --blue: #27618e;
+      --ink: #202a33;
+      --muted: #617080;
+      --line: #d8e0e8;
+      --wash: #f4f7fa;
+      --input: #fff5d9;
+      --green: #e7f4eb;
+      --red: #a83333;
+      --page: #f3f6f9;
+      --nikko: #2e7d4f;
+      --nikko-wash: #eaf5ee;
+      --mufg: #c8323b;
+      --mufg-wash: #fcecec;
+    }
+    body[data-broker="nikko"] { --page: var(--nikko-wash); }
+    body[data-broker="mufg"]  { --page: var(--mufg-wash); }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--page);
+      color: var(--ink);
+      transition: background-color .25s;
+      font-family: Arial, "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+      line-height: 1.5;
+    }
+    main { max-width: 980px; margin: 0 auto; padding: 28px 18px 44px; }
+    h1 { margin: 0 0 6px; color: var(--navy); font-size: clamp(1.35rem, 3vw, 1.8rem); }
+    .intro { margin: 0 0 22px; color: var(--muted); }
+    .panel {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 3px 12px rgb(20 50 75 / 5%);
+      margin-bottom: 18px;
+    }
+    h2 { margin: 0 0 14px; color: var(--navy); font-size: 1.1rem; }
+    h3 { margin: 18px 0 8px; color: var(--navy); font-size: 1rem; }
+    .inputs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+    label { display: block; font-size: .92rem; font-weight: 700; }
+    .unit { color: var(--muted); font-weight: 400; }
+    input[type="number"] {
+      display: block; width: 100%; margin-top: 6px; padding: 11px 12px;
+      border: 1px solid #c9d3de; border-radius: 7px; background: var(--input);
+      color: var(--ink); font: inherit; font-size: 1.08rem; text-align: right;
+    }
+    input[type="number"]:focus { outline: 3px solid rgb(39 97 142 / 18%); border-color: var(--blue); }
+    .example { margin: 12px 0 0; color: var(--muted); font-size: .86rem; }
+    .error { min-height: 1.4em; color: var(--red); font-size: .9rem; }
+
+    /* タブ */
+    .tabs { display: flex; gap: 6px; margin: 0 0 -1px; padding-left: 4px; position: relative; z-index: 1; }
+    .tab {
+      appearance: none; border: 1px solid var(--line); border-bottom: none;
+      background: #e6ecf2; color: var(--muted);
+      padding: 11px 18px; border-radius: 10px 10px 0 0;
+      font: inherit; font-weight: 700; font-size: .95rem; cursor: pointer;
+    }
+    .tab { display: inline-flex; align-items: center; gap: 8px; }
+    .tab-icon { width: 26px; height: 26px; border-radius: 50%; flex: none; display: inline-grid; place-items: center; background: var(--navy); color: #fff; font-size: .8rem; font-weight: 700; }
+    #tab-nikko .tab-icon { background: var(--nikko); }
+    #tab-mufg .tab-icon { background: var(--mufg); }
+    #tab-nikko[aria-selected="true"] { box-shadow: inset 0 3px 0 var(--nikko); }
+    #tab-mufg[aria-selected="true"] { box-shadow: inset 0 3px 0 var(--mufg); }
+    #panel-nikko { border-top: 3px solid var(--nikko); }
+    #panel-mufg { border-top: 3px solid var(--mufg); }
+    .tab[aria-selected="false"] .tab-icon { opacity: .55; }
+    .tab:hover { color: var(--navy); }
+    .tab:hover .tab-icon { opacity: 1; }
+    .tab[aria-selected="true"] { background: #fff; color: var(--navy); border-color: var(--line); }
+    .tab-panel { border-top-left-radius: 0; }
+    .tab-panel[hidden] { display: none; }
+
+    .course { margin: 0 0 14px; padding: 0; border: 0; }
+    .course legend { font-size: .92rem; font-weight: 700; margin-bottom: 6px; }
+    .course label { display: inline-flex; align-items: center; gap: 6px; margin: 0 18px 4px 0; font-weight: 400; cursor: pointer; }
+    .course input { width: 18px; height: 18px; accent-color: var(--blue); }
+
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+    th, td { padding: 11px 12px; border-bottom: 1px solid var(--line); }
+    th { background: var(--navy); color: #fff; text-align: left; font-weight: 700; }
+    th .sub { color: #cfe0ee; font-weight: 400; font-size: .85em; }
+    th:not(:first-child), td:not(:first-child) { text-align: right; }
+    .result tbody tr:last-child { background: var(--green); font-weight: 700; }
+    .amount { white-space: nowrap; }
+    .positive { color: #14643a; }
+    .negative { color: var(--red); }
+    .note { margin: 12px 0 0; color: var(--muted); font-size: .86rem; }
+    details { margin-top: 18px; padding-top: 14px; border-top: 1px dashed var(--line); }
+    details summary { color: var(--blue); cursor: pointer; font-weight: 700; }
+    details .table-wrap { margin-top: 8px; }
+    .source { margin-top: 14px; font-size: .86rem; }
+    a { color: var(--blue); }
+    footer { color: var(--muted); font-size: .8rem; padding: 0 3px; }
+    @media (max-width: 700px) {
+      main { padding: 20px 12px 32px; }
+      .panel { padding: 16px 13px; }
+      .inputs { grid-template-columns: 1fr; gap: 11px; }
+      .tab { padding: 10px 12px; font-size: .88rem; }
+      th, td { padding: 9px 8px; font-size: .88rem; }
+    }
+    @media print {
+      body { background: #fff; }
+      main { max-width: none; padding: 0; }
+      .panel { box-shadow: none; break-inside: avoid; }
+      input[type="number"] { background: #fff; }
+    }
+  </style>
+</head>
+<body data-broker="nikko">
+  <main>
+    <h1>株式手数料計算</h1>
+    <p class="intro">約定単価・数量・取得単価を入力し、タブで証券会社を切り替えると、それぞれの手数料と利益を比較できます。</p>
+
+    <section class="panel" aria-labelledby="input-title">
+      <h2 id="input-title">入力（共通）</h2>
+      <div class="inputs">
+        <label for="sell-price">売却約定単価 <span class="unit">円／株</span>
+          <input id="sell-price" type="number" min="0" step="1" value="1559" inputmode="decimal">
+        </label>
+        <label for="shares">売却数量 <span class="unit">株</span>
+          <input id="shares" type="number" min="1" step="1" value="5400" inputmode="numeric">
+        </label>
+        <label for="cost-price">取得単価 <span class="unit">円／株</span>
+          <input id="cost-price" type="number" min="0" step="1" value="1536" inputmode="decimal">
+        </label>
+      </div>
+      <p class="example">例（売却1,559円・5,400株・取得1,536円）です。黄色の欄を書き換えてください。</p>
+      <p id="error" class="error" role="alert"></p>
+    </section>
+
+    <div class="tabs" role="tablist" aria-label="証券会社">
+      <button class="tab" role="tab" id="tab-nikko" aria-controls="panel-nikko" aria-selected="true"><span class="tab-icon" aria-hidden="true">日</span>SMBC日興</button>
+      <button class="tab" role="tab" id="tab-mufg" aria-controls="panel-mufg" aria-selected="false" tabindex="-1"><span class="tab-icon" aria-hidden="true">三</span>三菱UFJモルガン</button>
+    </div>
+
+    <!-- ===== SMBC日興 ===== -->
+    <section class="panel tab-panel" role="tabpanel" id="panel-nikko" aria-labelledby="tab-nikko">
+      <h2>SMBC日興証券 試算結果 <span class="unit">（税引前・総合コース）</span></h2>
+      <div class="table-wrap">
+        <table class="result" aria-label="SMBC日興の試算結果">
+          <thead><tr><th>項目</th><th>ネット注文</th><th>支店注文</th></tr></thead>
+          <tbody>
+            <tr><td>売却代金</td><td id="n-sale-online" class="amount"></td><td id="n-sale-branch" class="amount"></td></tr>
+            <tr><td>取得代金</td><td id="n-cost-online" class="amount"></td><td id="n-cost-branch" class="amount"></td></tr>
+            <tr><td>手数料前利益</td><td id="n-gross-online" class="amount"></td><td id="n-gross-branch" class="amount"></td></tr>
+            <tr><td>売却手数料（税込）</td><td id="n-fee-online" class="amount"></td><td id="n-fee-branch" class="amount"></td></tr>
+            <tr><td>手数料差引後利益</td><td id="n-net-online" class="amount"></td><td id="n-net-branch" class="amount"></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">税金は含みません。PO購入時の購入代金は取得単価×株数で計算し、売却手数料のみ差し引いています。</p>
+
+      <details>
+        <summary>SMBC日興 総合コースの手数料表を表示</summary>
+        <div class="table-wrap">
+          <table aria-label="日興総合コースの手数料率">
+            <thead><tr><th>約定代金</th><th>ネット注文</th><th>支店注文</th></tr></thead>
+            <tbody>
+              <tr><td>100万円以下</td><td>0.8855％（最低1,925円）</td><td>1.265％（最低5,500円）</td></tr>
+              <tr><td>100万円超〜200万円以下</td><td>0.6930％＋1,925円</td><td>0.990％＋2,750円</td></tr>
+              <tr><td>200万円超〜300万円以下</td><td>0.6160％＋3,465円</td><td>0.880％＋4,950円</td></tr>
+              <tr><td>300万円超〜400万円以下</td><td>0.5775％＋4,620円</td><td>0.825％＋6,600円</td></tr>
+              <tr><td>400万円超〜500万円以下</td><td>0.5390％＋6,160円</td><td>0.770％＋8,800円</td></tr>
+              <tr><td>500万円超〜1,000万円以下</td><td>0.4620％＋10,010円</td><td>0.660％＋14,300円</td></tr>
+              <tr><td>1,000万円超〜2,000万円以下</td><td>0.4235％＋13,860円</td><td>0.605％＋19,800円</td></tr>
+              <tr><td>2,000万円超〜3,000万円以下</td><td>0.3850％＋21,560円</td><td>0.550％＋30,800円</td></tr>
+              <tr><td>3,000万円超〜5,000万円以下</td><td>0.2310％＋67,760円</td><td>0.330％＋96,800円</td></tr>
+              <tr><td>5,000万円超〜1億円以下</td><td>192,500円</td><td>275,000円</td></tr>
+              <tr><td>1億円超〜5億円以下</td><td>192,500円</td><td>330,000円</td></tr>
+              <tr><td>5億円超〜10億円以下</td><td>192,500円</td><td>385,000円</td></tr>
+              <tr><td>10億円超</td><td>192,500円</td><td>440,000円</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note">※ネット注文の1億円超は、公式の表で金額が5,000万円超の欄にまとめて記載されているため192,500円としています。大口の場合はお取引店でご確認ください。</p>
+        <p class="source">出典：<a href="https://www.smbcnikko.co.jp/service/fee/stock/" target="_blank" rel="noopener noreferrer">SMBC日興証券「国内株式手数料」</a>（税込）</p>
+      </details>
+    </section>
+
+    <!-- ===== 三菱UFJモルガン ===== -->
+    <section class="panel tab-panel" role="tabpanel" id="panel-mufg" aria-labelledby="tab-mufg" hidden>
+      <h2>三菱UFJモルガン・スタンレー証券 試算結果 <span class="unit">（税引前・<span id="m-course-name">コンサルティング取引コース</span>）</span></h2>
+      <fieldset class="course">
+        <legend>お取引コース</legend>
+        <label><input type="radio" name="course" value="consulting" checked> コンサルティング取引コース</label>
+        <label><input type="radio" name="course" value="terrace"> MUFGテラス・コース</label>
+      </fieldset>
+      <div class="table-wrap">
+        <table class="result" aria-label="三菱UFJモルガンの試算結果">
+          <thead><tr><th>項目</th><th>ネット注文<br><span class="sub">インターネット・スマホ</span></th><th>コールセンター</th><th>お取引店<br><span class="sub" id="m-branch-label">来店・取引店電話</span></th></tr></thead>
+          <tbody>
+            <tr><td>売却代金</td><td id="m-sale-online" class="amount"></td><td id="m-sale-call" class="amount"></td><td id="m-sale-branch" class="amount"></td></tr>
+            <tr><td>取得代金</td><td id="m-cost-online" class="amount"></td><td id="m-cost-call" class="amount"></td><td id="m-cost-branch" class="amount"></td></tr>
+            <tr><td>手数料前利益</td><td id="m-gross-online" class="amount"></td><td id="m-gross-call" class="amount"></td><td id="m-gross-branch" class="amount"></td></tr>
+            <tr><td>売却手数料（税込）</td><td id="m-fee-online" class="amount"></td><td id="m-fee-call" class="amount"></td><td id="m-fee-branch" class="amount"></td></tr>
+            <tr><td>手数料差引後利益</td><td id="m-net-online" class="amount"></td><td id="m-net-call" class="amount"></td><td id="m-net-branch" class="amount"></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">税金は含みません。PO購入時の購入代金は取得単価×株数で計算し、売却手数料のみ差し引いています。ネット注文・コールセンターを使うには「オンライントレード・テレフォントレード契約」が必要です。実際の手数料は税抜金額をもとに計算されるため、1円程度ずれることがあります。</p>
+
+      <details>
+        <summary>三菱UFJモルガン・スタンレー証券の手数料表を表示</summary>
+        <h3>基本手数料（お取引店・コンサルティング取引コース）</h3>
+        <div class="table-wrap">
+          <table aria-label="基本手数料">
+            <thead><tr><th>約定金額</th><th>手数料（税込）</th></tr></thead>
+            <tbody>
+              <tr><td>2,750円以下</td><td>99.00％</td></tr>
+              <tr><td>2,750円超〜19万3千円以下</td><td>2,750円</td></tr>
+              <tr><td>19万3千円超〜50万円以下</td><td>1.430％</td></tr>
+              <tr><td>50万円超〜100万円以下</td><td>1.012％＋2,090円</td></tr>
+              <tr><td>100万円超〜500万円以下</td><td>0.869％＋3,520円</td></tr>
+              <tr><td>500万円超〜1,000万円以下</td><td>0.693％＋12,320円</td></tr>
+              <tr><td>1,000万円超〜3,000万円以下</td><td>0.572％＋24,420円</td></tr>
+              <tr><td>3,000万円超〜5,000万円以下</td><td>0.220％＋130,020円</td></tr>
+              <tr><td>5,000万円超</td><td>0.055％＋212,520円</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h3>窓口・コース別の割引と最低手数料</h3>
+        <div class="table-wrap">
+          <table aria-label="窓口・コース別の割引">
+            <thead><tr><th>注文窓口</th><th>コンサルティング<br>取引コース</th><th>MUFGテラス・<br>コース</th><th>最低手数料</th></tr></thead>
+            <tbody>
+              <tr><td>ネット注文（インターネット・スマホ・ボイストレード）</td><td>基本の50％割引</td><td>基本の70％割引</td><td>1,650円</td></tr>
+              <tr><td>コールセンター</td><td>基本の20％割引</td><td>基本の40％割引</td><td>2,200円</td></tr>
+              <tr><td>お取引店</td><td>基本手数料</td><td>基本の20％割引</td><td>2,750円</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note">※約定金額2,500円以下（お取引店は2,750円以下）は、最低手数料ではなく約定金額に対する率（ネット66％・コールセンター88％・お取引店99％）になります。MUFGテラス・コースの「お取引店」はMUFGテラス専用ダイヤル・チャットです。</p>
+        <p class="source">出典：<a href="https://www.sc.mufg.jp/service/commission/d_stock/index.html" target="_blank" rel="noopener noreferrer">三菱UFJモルガン・スタンレー証券「国内株式等売買手数料」</a>、<a href="https://www.sc.mufg.jp/service/style/triple_one/index.html" target="_blank" rel="noopener noreferrer">「コンサルティング取引コースのご案内」</a>、<a href="https://www.sc.mufg.jp/service/style/mufgterrace/index.html" target="_blank" rel="noopener noreferrer">「MUFGテラス・コースのご案内」</a>（税込）</p>
+      </details>
+    </section>
+
+    <footer>手数料・税額の概算用です。最終的な取引報告書の金額をご確認ください。</footer>
+  </main>
+  <script>
+    (() => {
+      const yen = new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 0 });
+      const money = value => `${yen.format(Math.round(value))}円`;
+      const fields = ['sell-price', 'shares', 'cost-price'].map(id => document.getElementById(id));
+      const courseRadios = document.querySelectorAll('input[name="course"]');
+
+      /* ---------- SMBC日興 総合コース ---------- */
+      function nikkoOnline(a) {
+        if (a <= 1000000) return Math.max(a * 0.008855, 1925);
+        if (a <= 2000000) return a * 0.00693 + 1925;
+        if (a <= 3000000) return a * 0.00616 + 3465;
+        if (a <= 4000000) return a * 0.005775 + 4620;
+        if (a <= 5000000) return a * 0.00539 + 6160;
+        if (a <= 10000000) return a * 0.00462 + 10010;
+        if (a <= 20000000) return a * 0.004235 + 13860;
+        if (a <= 30000000) return a * 0.00385 + 21560;
+        if (a <= 50000000) return a * 0.00231 + 67760;
+        return 192500; // 5,000万円超は一律
+      }
+      function nikkoBranch(a) {
+        if (a <= 1000000) return Math.max(a * 0.01265, 5500);
+        if (a <= 2000000) return a * 0.0099 + 2750;
+        if (a <= 3000000) return a * 0.0088 + 4950;
+        if (a <= 4000000) return a * 0.00825 + 6600;
+        if (a <= 5000000) return a * 0.0077 + 8800;
+        if (a <= 10000000) return a * 0.0066 + 14300;
+        if (a <= 20000000) return a * 0.00605 + 19800;
+        if (a <= 30000000) return a * 0.0055 + 30800;
+        if (a <= 50000000) return a * 0.0033 + 96800;
+        if (a <= 100000000) return 275000;
+        if (a <= 500000000) return 330000;
+        if (a <= 1000000000) return 385000;
+        return 440000;
+      }
+
+      /* ---------- 三菱UFJモルガン・スタンレー ---------- */
+      function mufgBase(a) {
+        if (a <= 2750) return a * 0.99;
+        if (a <= 193000) return 2750;
+        if (a <= 500000) return a * 0.0143;
+        if (a <= 1000000) return a * 0.01012 + 2090;
+        if (a <= 5000000) return a * 0.00869 + 3520;
+        if (a <= 10000000) return a * 0.00693 + 12320;
+        if (a <= 30000000) return a * 0.00572 + 24420;
+        if (a <= 50000000) return a * 0.0022 + 130020;
+        return a * 0.00055 + 212520;
+      }
+      // 窓口ごとの設定：基本手数料に掛ける割合・最低手数料・少額時の率・少額の上限
+      const MUFG_COURSES = {
+        consulting: {
+          name: 'コンサルティング取引コース',
+          branchLabel: '来店・取引店電話',
+          online: { factor: 0.5, min: 1650, smallRate: 0.66, smallLimit: 2500 },
+          call:   { factor: 0.8, min: 2200, smallRate: 0.88, smallLimit: 2500 },
+          branch: { factor: 1.0, min: 2750, smallRate: 0.99, smallLimit: 2750 }
+        },
+        terrace: {
+          name: 'MUFGテラス・コース',
+          branchLabel: 'テラス専用ダイヤル・チャット',
+          online: { factor: 0.3, min: 1650, smallRate: 0.66, smallLimit: 2500 },
+          call:   { factor: 0.6, min: 2200, smallRate: 0.88, smallLimit: 2500 },
+          branch: { factor: 0.8, min: 2750, smallRate: 0.99, smallLimit: 2750 }
+        }
+      };
+      function mufgFee(a, ch) {
+        if (a <= ch.smallLimit) return a * ch.smallRate;
+        return Math.max(mufgBase(a) * ch.factor, ch.min);
+      }
+
+      /* ---------- 表示 ---------- */
+      function set(id, value, profit = false) {
+        const el = document.getElementById(id);
+        el.textContent = money(value);
+        if (profit) el.className = `amount ${value < 0 ? 'negative' : 'positive'}`;
+      }
+      function fillColumn(prefix, key, sale, cost, fee) {
+        const gross = sale - cost;
+        set(`${prefix}-sale-${key}`, sale);
+        set(`${prefix}-cost-${key}`, cost);
+        set(`${prefix}-gross-${key}`, gross, true);
+        set(`${prefix}-fee-${key}`, fee);
+        set(`${prefix}-net-${key}`, gross - fee, true);
+      }
+      function clearAll() {
+        document.querySelectorAll('.result td.amount').forEach(td => { td.textContent = '—'; td.className = 'amount'; });
+      }
+
+      function update() {
+        const course = MUFG_COURSES[document.querySelector('input[name="course"]:checked').value];
+        document.getElementById('m-course-name').textContent = course.name;
+        document.getElementById('m-branch-label').textContent = course.branchLabel;
+
+        const [sell, shares, cost] = fields.map(input => Number(input.value));
+        const error = document.getElementById('error');
+        if (!Number.isFinite(sell) || !Number.isFinite(shares) || !Number.isFinite(cost) || sell < 0 || cost < 0 || shares <= 0) {
+          error.textContent = '約定単価・取得単価は0以上、数量は1株以上を入力してください。';
+          clearAll();
+          return;
+        }
+        error.textContent = '';
+        const sale = sell * shares;
+        const costAmount = cost * shares;
+
+        fillColumn('n', 'online', sale, costAmount, Math.round(nikkoOnline(sale)));
+        fillColumn('n', 'branch', sale, costAmount, Math.round(nikkoBranch(sale)));
+        ['online', 'call', 'branch'].forEach(k => {
+          fillColumn('m', k, sale, costAmount, Math.round(mufgFee(sale, course[k])));
+        });
+      }
+
+      /* ---------- タブ切り替え ---------- */
+      const tabs = Array.from(document.querySelectorAll('.tab'));
+      function selectTab(tab, focus = false) {
+        tabs.forEach(t => {
+          const on = t === tab;
+          t.setAttribute('aria-selected', on ? 'true' : 'false');
+          t.tabIndex = on ? 0 : -1;
+          document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
+        });
+        document.body.dataset.broker = tab.id === 'tab-mufg' ? 'mufg' : 'nikko';
+        if (focus) tab.focus();
+        try { localStorage.setItem('fee-calc-tab', tab.id); } catch (e) {}
+      }
+      tabs.forEach((tab, i) => {
+        tab.addEventListener('click', () => selectTab(tab));
+        tab.addEventListener('keydown', e => {
+          if (e.key === 'ArrowRight') selectTab(tabs[(i + 1) % tabs.length], true);
+          if (e.key === 'ArrowLeft') selectTab(tabs[(i - 1 + tabs.length) % tabs.length], true);
+        });
+      });
+      try {
+        const saved = document.getElementById(localStorage.getItem('fee-calc-tab'));
+        if (saved && tabs.includes(saved)) selectTab(saved);
+      } catch (e) {}
+
+      fields.forEach(input => input.addEventListener('input', update));
+      courseRadios.forEach(r => r.addEventListener('change', update));
+      update();
+    })();
+  </script>
+</body>
+</html>

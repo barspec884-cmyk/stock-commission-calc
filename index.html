@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="株式の売却価格、株数、取得単価から、SMBC日興証券と三菱UFJモルガン・スタンレー証券の手数料と手取り利益を試算する計算機">
+  <meta name="description" content="株式の売却価格・株数・取得単価から、SMBC日興証券と三菱UFJモルガン・スタンレー証券の手数料、税金、手残り金額を試算する計算機">
   <title>株式手数料計算</title>
   <style>
     :root {
@@ -13,16 +13,23 @@
       --ink: #202a33;
       --muted: #617080;
       --line: #d8e0e8;
-      --wash: #f4f7fa;
       --input: #fff5d9;
       --green: #e7f4eb;
       --red: #a83333;
+      --page: #f3f6f9;
+      --nikko: #2e7d4f;
+      --nikko-wash: #eaf5ee;
+      --mufg: #c8323b;
+      --mufg-wash: #fcecec;
     }
+    body[data-broker="nikko"] { --page: var(--nikko-wash); }
+    body[data-broker="mufg"]  { --page: var(--mufg-wash); }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      background: #f3f6f9;
+      background: var(--page);
       color: var(--ink);
+      transition: background-color .25s;
       font-family: Arial, "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
       line-height: 1.5;
     }
@@ -49,7 +56,13 @@
     }
     input[type="number"]:focus { outline: 3px solid rgb(39 97 142 / 18%); border-color: var(--blue); }
     .example { margin: 12px 0 0; color: var(--muted); font-size: .86rem; }
-    .error { min-height: 1.4em; color: var(--red); font-size: .9rem; }
+    .error { min-height: 1.4em; color: var(--red); font-size: .9rem; margin: 6px 0 0; }
+
+    .options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 16px; }
+    .choice { margin: 0; padding: 0; border: 0; min-width: 0; }
+    .choice legend { font-size: .92rem; font-weight: 700; margin-bottom: 6px; padding: 0; }
+    .choice label { display: flex; align-items: center; gap: 7px; margin: 0 0 4px; font-weight: 400; cursor: pointer; }
+    .choice input { width: 18px; height: 18px; accent-color: var(--blue); flex: none; }
 
     /* タブ */
     .tabs { display: flex; gap: 6px; margin: 0 0 -1px; padding-left: 4px; position: relative; z-index: 1; }
@@ -58,9 +71,15 @@
       background: #e6ecf2; color: var(--muted);
       padding: 11px 18px; border-radius: 10px 10px 0 0;
       font: inherit; font-weight: 700; font-size: .95rem; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 8px;
     }
-    .tab { display: inline-flex; align-items: center; gap: 8px; }
-    .tab-icon { width: 26px; height: 26px; border-radius: 6px; flex: none; box-shadow: 0 0 0 1px rgb(0 0 0 / 8%); }
+    .tab-icon { width: 26px; height: 26px; border-radius: 50%; flex: none; display: inline-grid; place-items: center; color: #fff; font-size: .8rem; font-weight: 700; }
+    #tab-nikko .tab-icon { background: var(--nikko); }
+    #tab-mufg .tab-icon { background: var(--mufg); }
+    #tab-nikko[aria-selected="true"] { box-shadow: inset 0 3px 0 var(--nikko); }
+    #tab-mufg[aria-selected="true"] { box-shadow: inset 0 3px 0 var(--mufg); }
+    #panel-nikko { border-top: 3px solid var(--nikko); }
+    #panel-mufg { border-top: 3px solid var(--mufg); }
     .tab[aria-selected="false"] .tab-icon { opacity: .55; }
     .tab:hover { color: var(--navy); }
     .tab:hover .tab-icon { opacity: 1; }
@@ -69,17 +88,24 @@
     .tab-panel[hidden] { display: none; }
 
     .course { margin: 0 0 14px; padding: 0; border: 0; }
-    .course legend { font-size: .92rem; font-weight: 700; margin-bottom: 6px; }
+    .course legend { font-size: .92rem; font-weight: 700; margin-bottom: 6px; padding: 0; }
     .course label { display: inline-flex; align-items: center; gap: 6px; margin: 0 18px 4px 0; font-weight: 400; cursor: pointer; }
     .course input { width: 18px; height: 18px; accent-color: var(--blue); }
 
+    .tax-toggle { display: inline-flex; align-items: center; gap: 7px; margin: 0 0 12px; font-weight: 400; font-size: .9rem; cursor: pointer; color: var(--muted); }
+    .tax-toggle input { width: 17px; height: 17px; accent-color: var(--blue); }
+
     .table-wrap { overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-    th, td { padding: 11px 12px; border-bottom: 1px solid var(--line); }
+    th, td { padding: 10px 12px; border-bottom: 1px solid var(--line); }
     th { background: var(--navy); color: #fff; text-align: left; font-weight: 700; }
     th .sub { color: #cfe0ee; font-weight: 400; font-size: .85em; }
     th:not(:first-child), td:not(:first-child) { text-align: right; }
-    .result tbody tr:last-child { background: var(--green); font-weight: 700; }
+    .result tr.sum td { font-weight: 700; }
+    .result tr.final td { background: var(--green); font-weight: 700; font-size: 1.05rem; }
+    .result tr.cash td { color: var(--muted); }
+    .result tr.minus td:not(:first-child)::before { content: "－"; color: var(--muted); }
+    body.no-tax .result tr.tax-row { display: none; }
     .amount { white-space: nowrap; }
     .positive { color: #14643a; }
     .negative { color: var(--red); }
@@ -87,15 +113,17 @@
     details { margin-top: 18px; padding-top: 14px; border-top: 1px dashed var(--line); }
     details summary { color: var(--blue); cursor: pointer; font-weight: 700; }
     details .table-wrap { margin-top: 8px; }
+    details ul { margin: 10px 0 0; padding-left: 1.3em; font-size: .9rem; }
+    details li { margin-bottom: 4px; }
     .source { margin-top: 14px; font-size: .86rem; }
     a { color: var(--blue); }
     footer { color: var(--muted); font-size: .8rem; padding: 0 3px; }
     @media (max-width: 700px) {
       main { padding: 20px 12px 32px; }
       .panel { padding: 16px 13px; }
-      .inputs { grid-template-columns: 1fr; gap: 11px; }
+      .inputs, .options { grid-template-columns: 1fr; gap: 11px; }
       .tab { padding: 10px 12px; font-size: .88rem; }
-      th, td { padding: 9px 8px; font-size: .88rem; }
+      th, td { padding: 9px 8px; font-size: .86rem; }
     }
     @media print {
       body { background: #fff; }
@@ -105,49 +133,53 @@
     }
   </style>
 </head>
-<body>
+<body data-broker="nikko">
   <main>
     <h1>株式手数料計算</h1>
-    <p class="intro">約定単価・数量・取得単価を入力し、タブで証券会社を切り替えると、それぞれの手数料と利益を比較できます。</p>
+    <p class="intro">約定単価・数量・取得単価を入力し、タブで証券会社を切り替えると、手数料・税金・手残り金額を比較できます。</p>
 
     <section class="panel" aria-labelledby="input-title">
       <h2 id="input-title">入力（共通）</h2>
       <div class="inputs">
         <label for="sell-price">売却約定単価 <span class="unit">円／株</span>
-          <input id="sell-price" type="number" min="0" step="1" value="1559" inputmode="decimal">
+          <input id="sell-price" type="number" min="0" step="any" value="1559" inputmode="decimal">
         </label>
-        <label for="shares">売却数量 <span class="unit">株</span>
+        <label for="shares">数量 <span class="unit">株</span>
           <input id="shares" type="number" min="1" step="1" value="5400" inputmode="numeric">
         </label>
         <label for="cost-price">取得単価 <span class="unit">円／株</span>
-          <input id="cost-price" type="number" min="0" step="1" value="1536" inputmode="decimal">
+          <input id="cost-price" type="number" min="0" step="any" value="1536" inputmode="decimal">
         </label>
       </div>
+
+      <div class="options">
+        <fieldset class="choice">
+          <legend>取得方法</legend>
+          <label><input type="radio" name="acquire" value="po" checked> PO・公募（買付手数料なし）</label>
+          <label><input type="radio" name="acquire" value="market"> 市場で購入（買付手数料あり）</label>
+        </fieldset>
+      </div>
+
       <p class="example">例（売却1,559円・5,400株・取得1,536円）です。黄色の欄を書き換えてください。</p>
       <p id="error" class="error" role="alert"></p>
     </section>
 
     <div class="tabs" role="tablist" aria-label="証券会社">
-      <button class="tab" role="tab" id="tab-nikko" aria-controls="panel-nikko" aria-selected="true"><img class="tab-icon" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAARzUlEQVR42u2af3BU5bnHP+85Z3eTzSZLfhkIBkqQW7FcGEuVeBG1I6gItqPAUBgpBStD650WuaIUnNbhOiDaQax1OkVlWi5Mq1ItwgStF7EK4YdaTKwUhSRAfv/eJJvsj3PO+94/dvdkAwkCYrC9eWcy2T17zvue9/s8z/d5nu85QimlGBz9Dm0QgkGABgEaBGgQoEGABgEaBGgQoMExCNAgQIMADQL0VRvGQC0kpUQphRACTeuxS+JYXyP5tzNFh/6uOXMtoNd6FzrEQMgd5wLhUs4rpfxCYFx6gBSgFGifv/kjR47Q2NhIYWEhY8aMcTbY3t7OkCFDzjo/Go0SDofJyMgAoKGhgXA4jG3bRCIRxo4d2ydYpmlSWlpKc3Mzuq5z5ZVXUlhYiMfjGUAOUgpsGwTnBEcphZSSDRs2cPDgQYLBIE8++SStra0AWJbFunXrCAaDzjW2baOU4s0332Tnzp3OsXA4zIMPPsimTZs4cOAA3//+96mpqUEphW3bCCH46KOPWL16NUeOHCESiVBbW8vDDz/M9u3bnXkuxk0vbEjZ66t5/PRZx5RSyrZtpZRS//jHP9TChQud4ydOnFCBQEAppVQ0GlVFRUVqx44dSimlLMtyrps7d67asGGDUkqpSCSilFLqgQceUJs2bVJKKbVkyRK1Zs0aZ62qqio1f/58dfr06V73UVFRobZv397rni5kXJgHSQVCoNqDdG97g8aihQR+uB6EiP3WB4mmp6dTXl5OWVkZAKNHj8bv9wPQ0dGB1+vltdde60Xgx48fp7KyknA4fJY3JuYdPXo0OTk5Dglv2bKFG264gYKCAqLRKLZtY9s2BQUFTJ069aLJWrugsNIEdlUDzbc/SOu9K4ke+hu4+k6EQgiklAwfPpwZM2Ywa9Ys9u3b54QWQFVVFbfffjuhUIh3333X2fyePXuYPXs29fX1zlxCCNxuN59++imvv/46paWlLFy40FmvrKyMMWPGoJRC13XnzzAMxyBfHgdJCUJgfvgpneu2oIJhhO5D6Gkx4PrLAEJg2zYrV67k/vvvZ/78+RQXF2MYMVCbmprIz89n3rx5bN68GSEEn332GZFIhKlTp1JdXd3L8lJKvF4vV1xxBWlpaaxatcoBOxQKIaXsN+1/uQDFQQgseQLZ1I5IT42RtH3uhYUQ6LqOlJKHH36YRx99lF/84he0tbUB0NbWhmVZzJw5k8rKSurr69m/fz+TJ08mJyeH7u5uLMtyALIsixEjRlBUVMTGjRvZt28fxcXFAGRnZ1NWVuZ4bnJofpHU//lX2jboOl3Pbif8t31o2Rlg2udVoyRASGSaJUuWUFBQQEVFhfNbSkoKuq4zc+ZMVq1aRWtrKxMnTkTXdYQQBINBJ/R0XXe4yOv1MnHiRE6ePAnAnDlz+MMf/kBbWxsul6uXkU6cOPElACQVRE3QdayjlbQ/8hxCy4gBdp6VM0BxcTElJSXous6JEydIT0+nsLAQgJqaGnw+HwCLFi2ipKSEsWPHIoTA5/MRDAYdHgJoaWmhsbERTdM4ffo0HR0d3HnnnSilmD59OjNnzmTOnDkcPnyYSCSClJJDhw6xa9euiw41o89wkgp0DdwusCwCS55ChUII9Fhx6Jin/zooYfVRo0axefNmDh06RDAYZNmyZWRmZlJfX49t2wQCAUzTJDc3l3Xr1nHjjTcCkJqaynXXXUdxcTHZ2dlEIhGGDh1KY2Mjv/71r5FSsnLlSq666iqUUiilePzxx3n55Zd58cUXycrKwuVy0dLSwqJFiy59JW2frCW46VW0dB9dG/6EbGlHqW7S7puFWVpO9KNjYEVwT/4Wuft+EwO1H7CklLS0tJCbm9srZeu63isck9uGRNpPFIFSSofcI5GIUxknzjtzjq6uLgDS0tJ6tSEJL9I0rc91+/eg+MmyqY32/3qW8I59WJ1VpP/nDxG+FGhuiwelANNCWm1omg/XtWM+l4s0TXPASdxogk8SKTxR6SZAS2w68T15Qx6Px/GaBAEnz6FpmgNMcn11JmGfT3+onVkEWidqCG79EypoohmZCLerJ1sJgQpFETkZ+H44jys+/B+GPLv8nP3YmTdxrhvUdZ1Tp04hpcS2bSeFJ1s64U2JY2fySoLck6+rrKykqqoKIQSHDx/m/fffB6C+vp729nbO1Y6ezUEuA033g6bHspVzsYZSFsaYAob85iGEz9vTsPZhiYSnvPnmmzz33HP4/f5em9E0jY6ODpYvX87NN99MIBDg5z//OQCmaeJ2u/F4PAQCAcaMGcP+/ftZuXIlRUVFHDhwgBdffBEhBBMnTiQ7O5tt27Y5a0QiEQoLC1m7di2GYVBaWsrGjRt54403eOyxxxg3bhwTJkzg7rvvZunSpSxcuLBfJcDovxFVyWZBEsTz7+PxrZiPSPWAZce8pp8aI2GVuro6amtrWb9+fS/gurq6uPfee2lqagKgvb2dw4cPs337dlavXs2ECRMYMmQIL730EkuXLmXv3r00NDQ4LUp+fr6TzqdMmcK1115LRUUFy5cv55lnnuGqq65C0zQ6OzvJyspi2LBhvPPOO7S0tDBixAjeeustcnNzGTlyJLW1tQwbNqxPWeb8BDNbItDxv/BIDziGfn51hKaRmZl5ljxh2zY+n88hXpfLhaZpbNy4EY/Hg6ZphEIh8vLy2LFjBw0NDXi9Ma/t7OzEsix0XScYDJKZmYnf78flcuH1ehk/fjx5eXlOhX3gwAGmTZvG1q1bSU1NZe/evezevZs5c+ZQUlJCeno6+fn5vXq98y8UDR3Z3E76isW4r7/mgsBJDMuyCIVChEIhurq6CIVCNDc3O9JGArCUlBQWLlyIEIK6ujoaGxtpbW3lnnvuoaCgwGleR44cSXd3N4FAgKysLCorK5k1axYNDQ2OdyYypWVZLF68mJkzZ1JeXs5NN93EvHnzOH78OJMnT+bHP/4xubm5FxBiPaYHw4VsC+Kedi3paxbHyFq/sLLd7XbT0NDAD37wg7Ok0HA47GQpgO7ubrZt24Zt23R0dBCJRDAMgz//+c+cPn3aCalEtktsKCGiJVqbH/3oR0ydOpUVK1Zw8OBB9uzZw/79+5k0aRJ5eXk0Nzfzve99j7lz5zJhwgRuvPFGFixYgNvtPg+ARIxXVDSEpA3Nl0LGYw8hUjxOpruQYZomOTk5PP300704KBgMMnfuXEfE8vl8pKens2jRIp555hkmTZpEWloaNTU1zJ49m48//tipfTwej6NCJirxRPaSUrJixQquueYalFL4/X5qa2vJzs7mtttuIzs7m0AgwKhRo2hvb+f48ePOXOfHQVELJTtxjx+P997b8C66Cy1nyDkLwc+rg1wuF/n5+b2Od3d397qZrVu3Ul1dzc6dOykvLycnJ4fMzEyqq6vZtWsX1dXVbNu2jVtuuQXTNGlpacHlcjm9XiKklFKMHTvW4ZRjx46xbNkyamtr+d3vfsfRo0e56667+OSTT/B6vTz55JO8/PLLTJs2DbfbfRZIRi/PAbRh2WS/soHUu2+BhPuriwMnuaM/c3g8nl41y/jx4/nlL3/JmjVr0HXdyUJ+v59Nmzbx1FNPkZqaihDC8abvfve7bNy4kenTp6PrOmlpaWia5hC/pmk88MADzpq7du1izpw5PPHEE2zYsIE9e/Ywbtw4xo0b129t1gNQHACjMB+jMG5ty45xzhd8IlFRUcFPf/rTXhxk2zZNTU1OiI0ePZp169aRn5/PI488QlFREQCTJk3ioYce4pVXXuHxxx93Ml5FRQV79+4F4Pnnn6eqqor169fT2dnJypUr8fv9PProo2RmZrJnzx62bNmC2+1mwYIFvPrqq/zxj3/k1ltvdYi8L/7puxdTKiaQaV8MmAQQdXV1HDt2DNM0e1Wsmqbhdrv5+te/ztChQ3nvvfc4efIk8+bNwzAMJ8MZhoFpmmzevJkrr7ySGTNmUF9fT1lZGbZtM3z4cEKhEJFIBNM0SUlJobu7G6UUU6ZMITU1lZdeeomMjAymT59ORUUFu3fvxu/3c8cdd5CTk3POx1Liq/gacHLKvZTPui7m+dyXDlCCPM9VSCb3V4nvfc2R3HQm5uzvyWsisyU/7kkW3JLXvuxPVgdfXhgEaBCgwXHeetClYeYerYjkz3EdO/FB9C5Sv4rj4klaqR6BP7nYvJiUnKi9VBxAIUBoSWBepqHUeQKUACJx6udU1yocQXV2o7pCyGAEzCgqnmqFriM8HkR6CsLnRaSnIfqTT2zZ0+YIMTCe5hhdga73A1AyIJrWZx8mAx3Yp+qxPqvGqqjBrqjFrmpC1rUg2zqRgS4IR1ARC4WVFGMaAgOR6kJ4UxBZ6ejDstC/Ngzj6gJc14zC+MYojFH5Pb1g8kNMiHmXdgnBkgqUjLlvkpyjwpE4QMnh0gcgsr0T6+hJzNLjmEeOY5ZWYFfUIJvakISB2OQCDdABPf5Zi3ON6IOjFCBR2IAd/x9TLoXLhzE6H9e3rsY9ZTzuom/gumYUGGdQpmX3cJgQPeF5TlpIooe4INjrlO4Q0ZIyQq+9S+SNwwhl2epMEUw2BzA/+oxIyceY+z/GLC3HbmhGEYnTq4HAHeN4PYkrEjeA6nGYviJYJLG1oHf4xDVxhYkiCig0vOhXj8AzZTzub38T9/VjMUYXnJsbz3rA2T83WuXVRA99QuR/PyD69odYp6pRWAhSYh6kolHM0uNE9h4huudDoh98imxtRmEiMAA3Qrh63O9MTrrkqaNHuEt4iiIaN5BAc2fgGjsS13VX47p+LK5vFKKPzEPLGYLwuPt3oO4wsiWAfaoB85NKzA+PYX5wDPPoKWSkI760B6F5YlEkJaJt8VoV+etHWOVVKMIxF8cDmit20pcJRrJlk98UEaL32smAKcC24oBFnU1paT60HD/aFZlomekIXwpC11FRE9kZRrW2I5vaka0dyFBXUjS4YvvVjdg6UvbKzKKKbyqBO3aSoX353tE7mFGE48Sd0gOCnfAWI3ZfqD48LIkrbQnKdvgsxmk9hZeIWSLOjUbs2kQ0JAi6n+0amuHvQc2yB6a+EDFwRHoa7onXosJRzMOfgm0i7U6MoaMwri5A1rVinagGofek/ETRqWQsNzhz6gihO1zmdOm9ODGJpM9zr8aAgdILIA0lw+g5+eS8/SvsU3XUfW0GQ9YuQ1yRgXXsNP6nfkLXs9tp+cnP0MiMh4KLfk2dnCC+8q3GeYSWSElB+NNAKmR3BC09g5S7b8a4eiTd294AqdBHDMV7151ovkzMkk+wTtXGksUAKjSihpsGVg8ydKQVwLdoNv7frojxg6FjVdSi52UhfKl9XtZ231q6Nr+C5so8rzfc/nk9SMWqadnZjaxrRR+ei4qYCE0gfKl0/XYHwuvBu+AOou+VEXr9bTSfH3Pf32NEbg+sPQde7rBtNCOD7j8V07FmcyybSEnb/esIF5cQ2bkf69ip2KnVjUT2fkDkL+8jMryxDKTkwNLlgIdYTAxGyg5y//IbPNOuj4HR0Iqel9XvJZEDZTT/x2KEnv65b9f+c4eYpqFkNymTb8Dz7YmxqIuayNpmQq/9BS0zC++sW+MFpCL06tvYLa3YR+uAgSXoywSQQEkT7/13xhpFKbFP1dNy1wqiNX8n54WnwdBRpoVwGQi3h8DS/wZcaCJes/3rS66K6LtlRN4+hOoKoSImdk0NOS/8Cu9930G2tCNcBrK1nZTvTCFn1yb0vDwQ1oCrj5eBpCWa8BF67a90rHo+pgmlesh95wW8983ALKugc+3vAej+/W4ib31AyowbyN61AVyxsBtIpXHgAVIKhI5sa0VWtYDQkI1t2HVNyJZ2Wu55ELuiHqRCBbppXfAzZHOA6MG/IyOdMRFN/StzUFK7IdK9oAm0nAxaZ69G8/kwy4+ROuOW2PFhWVgNVTTf/BNUW2e8Dvr/kOaFAGUjfF5c141BRUzMkqMobIRmoA/PRf+3fGR1C9Zn1ShlxRVKgwF1n8sG0Flyh0AIb1yPUXENOxqXO9xxbYgBT/GXN8QSYab5kjSdhIO5QHP3aFPy8tnw8gKk6JtTlBrwnusrVgf984z/Az8dsfBrp/DaAAAAAElFTkSuQmCC" alt="">SMBC日興</button>
-      <button class="tab" role="tab" id="tab-mufg" aria-controls="panel-mufg" aria-selected="false" tabindex="-1"><img class="tab-icon" src="data:image/png;base64,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" alt="">三菱UFJモルガン</button>
+      <button class="tab" role="tab" id="tab-nikko" aria-controls="panel-nikko" aria-selected="true"><span class="tab-icon" aria-hidden="true">日</span>SMBC日興</button>
+      <button class="tab" role="tab" id="tab-mufg" aria-controls="panel-mufg" aria-selected="false" tabindex="-1"><span class="tab-icon" aria-hidden="true">三</span>三菱UFJモルガン</button>
     </div>
 
     <!-- ===== SMBC日興 ===== -->
     <section class="panel tab-panel" role="tabpanel" id="panel-nikko" aria-labelledby="tab-nikko">
-      <h2>SMBC日興証券 試算結果 <span class="unit">（税引前・総合コース）</span></h2>
+      <h2>SMBC日興証券 試算結果 <span class="unit">（総合コース）</span></h2>
+      <label class="tax-toggle"><input type="checkbox" class="show-tax" checked> 税金と手残りを表示する</label>
       <div class="table-wrap">
         <table class="result" aria-label="SMBC日興の試算結果">
           <thead><tr><th>項目</th><th>ネット注文</th><th>支店注文</th></tr></thead>
-          <tbody>
-            <tr><td>売却代金</td><td id="n-sale-online" class="amount"></td><td id="n-sale-branch" class="amount"></td></tr>
-            <tr><td>取得代金</td><td id="n-cost-online" class="amount"></td><td id="n-cost-branch" class="amount"></td></tr>
-            <tr><td>手数料前利益</td><td id="n-gross-online" class="amount"></td><td id="n-gross-branch" class="amount"></td></tr>
-            <tr><td>売却手数料（税込）</td><td id="n-fee-online" class="amount"></td><td id="n-fee-branch" class="amount"></td></tr>
-            <tr><td>手数料差引後利益</td><td id="n-net-online" class="amount"></td><td id="n-net-branch" class="amount"></td></tr>
-          </tbody>
+          <tbody id="n-body"></tbody>
         </table>
       </div>
-      <p class="note">税金は含みません。PO購入時の購入代金は取得単価×株数で計算し、売却手数料のみ差し引いています。</p>
+      <p class="note">市場で購入した場合の買付手数料は、売却と同じ注文経路で買ったものとして計算しています。</p>
 
       <details>
         <summary>SMBC日興 総合コースの手数料表を表示</summary>
@@ -178,25 +210,20 @@
 
     <!-- ===== 三菱UFJモルガン ===== -->
     <section class="panel tab-panel" role="tabpanel" id="panel-mufg" aria-labelledby="tab-mufg" hidden>
-      <h2>三菱UFJモルガン・スタンレー証券 試算結果 <span class="unit">（税引前・<span id="m-course-name">コンサルティング取引コース</span>）</span></h2>
+      <h2>三菱UFJモルガン・スタンレー証券 試算結果 <span class="unit">（<span id="m-course-name">コンサルティング取引コース</span>）</span></h2>
       <fieldset class="course">
         <legend>お取引コース</legend>
         <label><input type="radio" name="course" value="consulting" checked> コンサルティング取引コース</label>
         <label><input type="radio" name="course" value="terrace"> MUFGテラス・コース</label>
       </fieldset>
+      <label class="tax-toggle"><input type="checkbox" class="show-tax" checked> 税金と手残りを表示する</label>
       <div class="table-wrap">
         <table class="result" aria-label="三菱UFJモルガンの試算結果">
           <thead><tr><th>項目</th><th>ネット注文<br><span class="sub">インターネット・スマホ</span></th><th>コールセンター</th><th>お取引店<br><span class="sub" id="m-branch-label">来店・取引店電話</span></th></tr></thead>
-          <tbody>
-            <tr><td>売却代金</td><td id="m-sale-online" class="amount"></td><td id="m-sale-call" class="amount"></td><td id="m-sale-branch" class="amount"></td></tr>
-            <tr><td>取得代金</td><td id="m-cost-online" class="amount"></td><td id="m-cost-call" class="amount"></td><td id="m-cost-branch" class="amount"></td></tr>
-            <tr><td>手数料前利益</td><td id="m-gross-online" class="amount"></td><td id="m-gross-call" class="amount"></td><td id="m-gross-branch" class="amount"></td></tr>
-            <tr><td>売却手数料（税込）</td><td id="m-fee-online" class="amount"></td><td id="m-fee-call" class="amount"></td><td id="m-fee-branch" class="amount"></td></tr>
-            <tr><td>手数料差引後利益</td><td id="m-net-online" class="amount"></td><td id="m-net-call" class="amount"></td><td id="m-net-branch" class="amount"></td></tr>
-          </tbody>
+          <tbody id="m-body"></tbody>
         </table>
       </div>
-      <p class="note">税金は含みません。PO購入時の購入代金は取得単価×株数で計算し、売却手数料のみ差し引いています。ネット注文・コールセンターを使うには「オンライントレード・テレフォントレード契約」が必要です。実際の手数料は税抜金額をもとに計算されるため、1円程度ずれることがあります。</p>
+      <p class="note">市場で購入した場合の買付手数料は、売却と同じ注文窓口で買ったものとして計算しています。ネット注文・コールセンターを使うには「オンライントレード・テレフォントレード契約」が必要です。実際の手数料は税抜金額をもとに計算されるため、1円程度ずれることがあります。</p>
 
       <details>
         <summary>三菱UFJモルガン・スタンレー証券の手数料表を表示</summary>
@@ -233,6 +260,20 @@
       </details>
     </section>
 
+    <section class="panel">
+      <details style="margin:0;padding:0;border:0">
+        <summary>税金の計算方法を表示</summary>
+        <ul>
+          <li>税率は <strong>20.315％</strong>（所得税15％＋復興特別所得税0.315％＝15.315％、住民税5％）です。</li>
+          <li>課税される利益 ＝ 売却約定代金 －（取得約定代金＋買付手数料）－ 売却手数料</li>
+          <li>所得税等（15.315％）と住民税（5％）をそれぞれ計算し、1円未満を切り捨てています。</li>
+          <li>利益がマイナス（損失）のときは税金0円です。特定口座・一般口座（課税）での取引として計算しています。</li>
+          <li>同じ年のほかの取引の損益との相殺（損益通算）や、繰越損失は考慮していません。</li>
+          <li>「口座への入金額」は、売却約定代金から売却手数料と税金を引いた金額です。</li>
+        </ul>
+      </details>
+    </section>
+
     <footer>手数料・税額の概算用です。最終的な取引報告書の金額をご確認ください。</footer>
   </main>
   <script>
@@ -240,7 +281,7 @@
       const yen = new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 0 });
       const money = value => `${yen.format(Math.round(value))}円`;
       const fields = ['sell-price', 'shares', 'cost-price'].map(id => document.getElementById(id));
-      const courseRadios = document.querySelectorAll('input[name="course"]');
+      const radio = name => document.querySelector(`input[name="${name}"]:checked`).value;
 
       /* ---------- SMBC日興 総合コース ---------- */
       function nikkoOnline(a) {
@@ -305,28 +346,63 @@
         return Math.max(mufgBase(a) * ch.factor, ch.min);
       }
 
-      /* ---------- 表示 ---------- */
+      /* ---------- 税金（上場株式の譲渡所得：20.315％） ---------- */
+      function taxOn(gain) {
+        if (gain <= 0) return { income: 0, resident: 0, total: 0 };
+        const income = Math.floor(gain * 0.15315);   // 所得税＋復興特別所得税
+        const resident = Math.floor(gain * 0.05);    // 住民税
+        return { income, resident, total: income + resident };
+      }
+
+      /* ---------- 表の行の定義 ---------- */
+      const ROWS = [
+        { key: 'sale',   label: '売却約定代金' },
+        { key: 'cost',   label: '取得約定代金', cls: 'minus' },
+        { key: 'buyfee', label: '買付手数料（税込）', cls: 'minus' },
+        { key: 'fee',    label: '売却手数料（税込）', cls: 'minus' },
+        { key: 'gross',  label: '手数料差引後利益（税引前）', cls: 'sum', profit: true },
+        { key: 'tax',    label: '税金（20.315％）', cls: 'minus tax-row' },
+        { key: 'net',    label: '手残り利益（税引後）', cls: 'final tax-row', profit: true },
+        { key: 'cash',   label: '口座への入金額', cls: 'cash tax-row' }
+      ];
+      function buildBody(bodyId, prefix, keys) {
+        document.getElementById(bodyId).innerHTML = ROWS.map(r =>
+          `<tr class="${r.cls || ''}"><td>${r.label}</td>${keys.map(k => `<td id="${prefix}-${r.key}-${k}" class="amount"></td>`).join('')}</tr>`
+        ).join('');
+      }
+      buildBody('n-body', 'n', ['online', 'branch']);
+      buildBody('m-body', 'm', ['online', 'call', 'branch']);
+
       function set(id, value, profit = false) {
         const el = document.getElementById(id);
         el.textContent = money(value);
-        if (profit) el.className = `amount ${value < 0 ? 'negative' : 'positive'}`;
+        el.className = profit ? `amount ${value < 0 ? 'negative' : 'positive'}` : 'amount';
       }
-      function fillColumn(prefix, key, sale, cost, fee) {
-        const gross = sale - cost;
+      function fillColumn(prefix, key, sale, cost, feeFn, market) {
+        const sellFee = Math.round(feeFn(sale));
+        const buyFee = market ? Math.round(feeFn(cost)) : 0;
+        const gross = sale - cost - buyFee - sellFee;
+        const tax = taxOn(gross);
         set(`${prefix}-sale-${key}`, sale);
         set(`${prefix}-cost-${key}`, cost);
+        set(`${prefix}-buyfee-${key}`, buyFee);
+        set(`${prefix}-fee-${key}`, sellFee);
         set(`${prefix}-gross-${key}`, gross, true);
-        set(`${prefix}-fee-${key}`, fee);
-        set(`${prefix}-net-${key}`, gross - fee, true);
+        set(`${prefix}-tax-${key}`, tax.total);
+        set(`${prefix}-net-${key}`, gross - tax.total, true);
+        set(`${prefix}-cash-${key}`, sale - sellFee - tax.total);
+        document.getElementById(`${prefix}-tax-${key}`).title =
+          `所得税等 ${money(tax.income)}／住民税 ${money(tax.resident)}`;
       }
       function clearAll() {
         document.querySelectorAll('.result td.amount').forEach(td => { td.textContent = '—'; td.className = 'amount'; });
       }
 
       function update() {
-        const course = MUFG_COURSES[document.querySelector('input[name="course"]:checked').value];
+        const course = MUFG_COURSES[radio('course')];
         document.getElementById('m-course-name').textContent = course.name;
         document.getElementById('m-branch-label').textContent = course.branchLabel;
+        const market = radio('acquire') === 'market';
 
         const [sell, shares, cost] = fields.map(input => Number(input.value));
         const error = document.getElementById('error');
@@ -339,12 +415,22 @@
         const sale = sell * shares;
         const costAmount = cost * shares;
 
-        fillColumn('n', 'online', sale, costAmount, Math.round(nikkoOnline(sale)));
-        fillColumn('n', 'branch', sale, costAmount, Math.round(nikkoBranch(sale)));
+        fillColumn('n', 'online', sale, costAmount, nikkoOnline, market);
+        fillColumn('n', 'branch', sale, costAmount, nikkoBranch, market);
         ['online', 'call', 'branch'].forEach(k => {
-          fillColumn('m', k, sale, costAmount, Math.round(mufgFee(sale, course[k])));
+          fillColumn('m', k, sale, costAmount, a => mufgFee(a, course[k]), market);
         });
       }
+
+      /* ---------- 税金の表示・非表示（2つのタブで連動） ---------- */
+      const taxBoxes = Array.from(document.querySelectorAll('.show-tax'));
+      function setShowTax(on) {
+        document.body.classList.toggle('no-tax', !on);
+        taxBoxes.forEach(b => { b.checked = on; });
+        try { localStorage.setItem('fee-calc-show-tax', on ? '1' : '0'); } catch (e) {}
+      }
+      taxBoxes.forEach(b => b.addEventListener('change', () => setShowTax(b.checked)));
+      try { if (localStorage.getItem('fee-calc-show-tax') === '0') setShowTax(false); } catch (e) {}
 
       /* ---------- タブ切り替え ---------- */
       const tabs = Array.from(document.querySelectorAll('.tab'));
@@ -355,6 +441,7 @@
           t.tabIndex = on ? 0 : -1;
           document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
         });
+        document.body.dataset.broker = tab.id === 'tab-mufg' ? 'mufg' : 'nikko';
         if (focus) tab.focus();
         try { localStorage.setItem('fee-calc-tab', tab.id); } catch (e) {}
       }
@@ -371,7 +458,7 @@
       } catch (e) {}
 
       fields.forEach(input => input.addEventListener('input', update));
-      courseRadios.forEach(r => r.addEventListener('change', update));
+      document.querySelectorAll('input[type="radio"]').forEach(r => r.addEventListener('change', update));
       update();
     })();
   </script>

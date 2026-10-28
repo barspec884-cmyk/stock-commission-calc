@@ -358,6 +358,7 @@
       const ROWS = [
         { key: 'sale',   label: '売却約定代金' },
         { key: 'cost',   label: '取得約定代金', cls: 'minus' },
+        { key: 'diff',   label: '売買差益（手数料を引く前）', cls: 'sum', profit: true },
         { key: 'buyfee', label: '買付手数料（税込）', cls: 'minus' },
         { key: 'fee',    label: '売却手数料（税込）', cls: 'minus' },
         { key: 'gross',  label: '手数料差引後利益（税引前）', cls: 'sum', profit: true },
@@ -385,6 +386,7 @@
         const tax = taxOn(gross);
         set(`${prefix}-sale-${key}`, sale);
         set(`${prefix}-cost-${key}`, cost);
+        set(`${prefix}-diff-${key}`, sale - cost, true);
         set(`${prefix}-buyfee-${key}`, buyFee);
         set(`${prefix}-fee-${key}`, sellFee);
         set(`${prefix}-gross-${key}`, gross, true);
